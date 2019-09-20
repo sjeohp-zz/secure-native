@@ -1,0 +1,11 @@
+[target.aarch64-linux-android]
+ar = "/Users/sjeohp/Development/secure-native/NDK/arm64/bin/aarch64-linux-android-ar"
+linker = "/Users/sjeohp/Development/secure-native/NDK/arm64/bin/aarch64-linux-android-gcc"
+
+[target.armv7-linux-androideabi]
+ar = "/Users/sjeohp/Development/secure-native/NDK/arm/bin/arm-linux-androideabi-ar"
+linker = "/Users/sjeohp/Development/secure-native/NDK/arm/bin/arm-linux-androideabi-gcc"
+
+[target.i686-linux-android]
+ar = "/Users/sjeohp/Development/secure-native/NDK/x86/bin/i686-linux-android-ar"
+linker = "/Users/sjeohp/Development/secure-native/NDK/x86/bin/i686-linux-android-gcc"

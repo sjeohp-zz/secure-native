@@ -1,0 +1,47 @@
+[package]
+name = "secure-native"
+version = "0.1.0"
+authors = ["Joseph Mark <sjeohp@gmail.com>"]
+edition = "2018"
+build = "build.rs"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+keychain-services = { path = "../keychain-services.rs" }
+core-foundation = "0.6"
+failure = "0.1"
+libc = "0.2"
+
+#[build-dependencies]
+#jni-android-sys-gen = { path = "../jni-bindgen/jni-android-sys-gen" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.10.2"
+jni-glue = { path = "../jni-bindgen/jni-glue", features = [] }
+
+[target.'cfg(target_os = "android")'.dependencies.jni-android-sys]
+path = "../jni-bindgen/jni-android-sys" 
+features = [
+"api-level-29", 
+"java-lang-String",
+"java-util-Enumeration",
+"java-security-AlgorithmParameters",
+"java-security-spec-AlgorithmParameterSpec",
+"java-security-KeyStore_LoadStoreParameter",
+"java-security-KeyStore",
+"java-security-Key",
+"java-security-KeyStore_SecretKeyEntry",
+"java-security-SecureRandom",
+"javax-crypto-KeyGenerator",
+"javax-crypto-SecretKey",
+"javax-crypto-Cipher",
+"javax-crypto-spec-IvParameterSpec",
+"javax-crypto-spec-GCMParameterSpec",
+"android-util-Base64",
+"android-app-Activity",
+"android-content-Context",
+"android-content-SharedPreferences",
+"android-content-SharedPreferences_Editor",
+"android-security-keystore-KeyProperties",
+"android-security-keystore-KeyGenParameterSpec",
+"android-security-keystore-KeyGenParameterSpec_Builder"
+]
