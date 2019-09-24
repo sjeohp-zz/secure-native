@@ -231,7 +231,7 @@ impl From<CFErrorRef> for Error {
 }
 
 /// Kinds of errors.
-#[derive(Clone, Debug, Fail)]
+#[derive(Clone, Debug, Fail, PartialEq)]
 pub enum ErrorKind {
     /// Authentication and/or authorization failed.
     ///

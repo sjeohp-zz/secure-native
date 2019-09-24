@@ -9,44 +9,69 @@ use ffi::*;
 pub use ret::*;
 
 use core_foundation::{
-    base::{kCFAllocatorDefault, CFTypeRef, FromVoid, TCFType, ToVoid},
+    base::{kCFAllocatorDefault, CFOptionFlags, CFTypeID, CFTypeRef, FromVoid, TCFType, ToVoid},
     boolean::*,
     data::*,
+    declare_TCFType,
     dictionary::*,
+    error::CFErrorRef,
+    impl_TCFType,
     string::*,
 };
-use std::{ffi::CString, os::raw::c_char, os::unix::ffi::OsStrExt, path::Path, ptr};
+use std::{ffi::*, os::raw::c_char, os::unix::ffi::OsStrExt, path::Path, ptr};
 
-pub fn put(service: String, account: String, seed: String) -> Result<(), String> {
-    let attrs = unsafe {
-        CFDictionary::from_CFType_pairs(&[
-            (
-                CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
-                CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
-            ),
-            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service.as_ref()).as_CFType()),
-            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account.as_ref()).as_CFType()),
-            (CFString::wrap_under_get_rule(kSecValueData.into()).as_CFType(), CFData::from_buffer(seed.as_bytes()).as_CFType()),
-        ])
+declare_TCFType!(SecAccessControl, SecAccessControlRef);
+impl_TCFType!(SecAccessControl, SecAccessControlRef, SecAccessControlGetTypeID);
+
+pub fn put(service: &str, account: &str, value: &str) -> Result<(), String> {
+    let mut error: CFErrorRef = ptr::null_mut();
+    let access = unsafe {
+        SecAccessControlCreateWithFlags(
+            kCFAllocatorDefault,
+            CFString::wrap_under_get_rule(kSecAttrAccessibleWhenUnlockedThisDeviceOnly.into()).as_CFTypeRef(),
+            kSecAccessControlUserPresence,
+            &mut error,
+        )
     };
-    let mut result: CFTypeRef = ptr::null_mut();
-    let status = unsafe { SecItemAdd(attrs.as_concrete_TypeRef(), &mut result) };
-    if let Some(e) = Error::maybe_from_OSStatus(status) {
-        Err(format!("{}", e))
+    if !error.is_null() {
+        println!("{}", Error::from(error));
+        Err(format!("{}", Error::from(error)))
     } else {
-        Ok(())
+        let attrs = unsafe {
+            CFDictionary::from_CFType_pairs(&[
+                (
+                    CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
+                    CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
+                ),
+                (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
+                (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
+                (CFString::wrap_under_get_rule(kSecValueData.into()).as_CFType(), CFData::from_buffer(value.as_bytes()).as_CFType()),
+                (
+                    CFString::wrap_under_get_rule(kSecAttrAccessControl.into()).as_CFType(),
+                    SecAccessControl::wrap_under_get_rule(access.into()).as_CFType(),
+                ),
+            ])
+        };
+        let mut result: CFTypeRef = ptr::null_mut();
+        let status = unsafe { SecItemAdd(attrs.as_concrete_TypeRef(), &mut result) };
+        if let Some(e) = Error::maybe_from_OSStatus(status) {
+            println!("{}", e);
+            Err(format!("{}", e))
+        } else {
+            Ok(())
+        }
     }
 }
 
-pub fn get(service: String, account: String) -> Result<Option<String>, String> {
+pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
     let query = unsafe {
         CFDictionary::from_CFType_pairs(&[
             (
                 CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
                 CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
             ),
-            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service.as_ref()).as_CFType()),
-            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account.as_ref()).as_CFType()),
+            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
+            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
             (
                 CFString::wrap_under_get_rule(kSecMatchLimit.into()).as_CFType(),
                 CFString::wrap_under_get_rule(kSecMatchLimitOne.into()).as_CFType(),
@@ -71,16 +96,19 @@ pub fn get(service: String, account: String) -> Result<Option<String>, String> {
     }
 }
 
-pub fn contains(service: String, account: String) -> Result<bool, String> {
+pub fn contains(service: &str, account: &str) -> Result<bool, String> {
     let query = unsafe {
         CFDictionary::from_CFType_pairs(&[
             (
                 CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
                 CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
             ),
-            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service.as_ref()).as_CFType()),
-            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account.as_ref()).as_CFType()),
-            (CFString::wrap_under_get_rule(kSecUseNoAuthenticationUI.into()).as_CFType(), CFBoolean::from(true).as_CFType()),
+            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
+            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
+            (
+                CFString::wrap_under_get_rule(kSecUseAuthenticationUI.into()).as_CFType(),
+                CFString::wrap_under_get_rule(kSecUseAuthenticationUIFail.into()).as_CFType(),
+            ),
         ])
     };
     let mut result: CFTypeRef = ptr::null_mut();
@@ -94,22 +122,17 @@ pub fn contains(service: String, account: String) -> Result<bool, String> {
     }
 }
 
-pub fn delete(service: String, account: String) -> Result<(), String> {
+pub fn delete(service: &str, account: &str) -> Result<(), String> {
     let query = unsafe {
         CFDictionary::from_CFType_pairs(&[
             (
                 CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
                 CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
             ),
-            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service.as_ref()).as_CFType()),
-            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account.as_ref()).as_CFType()),
+            (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
+            (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
         ])
     };
-    let mut result: CFTypeRef = ptr::null_mut();
-    let status = unsafe { SecItemAdd(query.as_concrete_TypeRef(), &mut result) };
-    if let Some(e) = Error::maybe_from_OSStatus(status) {
-        Err(format!("{}", e))
-    } else {
-        Ok(())
-    }
+    let status = unsafe { SecItemDelete(query.as_concrete_TypeRef()) };
+    Ok(())
 }

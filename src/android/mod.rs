@@ -8,14 +8,13 @@ pub use arg::*;
 pub use ret::*;
 
 use jni::objects::{JClass, JObject, JString};
-use jni::strings::{JNIString, JNIStr};
+use jni::strings::{JNIStr, JNIString};
 use jni::sys::{jboolean, jclass, jobject, jsize, jstring, JNI_FALSE};
 use jni::JNIEnv;
-use jni_glue::{AsValidJObjectAndEnv, ByteArray, JniType, Local, ObjectArray, AsJValue};
+use jni_glue::{AsJValue, AsValidJObjectAndEnv, ByteArray, JniType, Local, ObjectArray};
 use std::os::raw::c_char;
 use std::ptr::null_mut;
 
-use jni_android_sys::*;
 use android::app::Activity;
 use android::content::{Context, SharedPreferences};
 use android::security::keystore::{KeyGenParameterSpec, KeyGenParameterSpec_Builder, KeyProperties};
@@ -25,10 +24,104 @@ use java::security::spec::AlgorithmParameterSpec;
 use java::security::{AlgorithmParameters, Key, KeyStore, KeyStore_SecretKeyEntry, SecureRandom};
 use javax::crypto::spec::{GCMParameterSpec, IvParameterSpec};
 use javax::crypto::{Cipher, KeyGenerator, SecretKey};
+use jni_android_sys::*;
 
-use crate::{expect, double_expect};
+use crate::{double_expect, expect};
 
 const ANDROID_KEYSTORE_PROVIDER: &'static str = "AndroidKeyStore";
+
+struct ResOpt<T> {
+    inner: Result<Option<T>, String>,
+}
+
+impl<T> ResOpt<T> {
+    fn and_then<'env, F, U>(self, f: F) -> ResOpt<U>
+    where
+        F: FnOnce(T) -> ResOpt<U>,
+    {
+        match self.inner {
+            Ok(Some(y)) => f(y),
+            Ok(None) => ResOpt { inner: Ok(None) },
+            Err(e) => ResOpt { inner: Err(e) },
+        }
+    }
+
+    fn map_result<'env, F, U>(self, f: F) -> ResOpt<U>
+    where
+        F: FnOnce(T) -> Result<Option<U>, Local<'env, Throwable>>,
+    {
+        match self.inner {
+            Ok(Some(y)) => ResOpt {
+                inner: f(y).map_err(|e| format!("{:?}", e.toString().unwrap().unwrap())),
+            },
+            Ok(None) => ResOpt { inner: Ok(None) },
+            Err(e) => ResOpt { inner: Err(e) },
+        }
+    }
+
+    fn map_option<'env, F, U>(self, f: F) -> ResOpt<U>
+    where
+        F: FnOnce(T) -> Option<U>,
+    {
+        match self.inner {
+            Ok(Some(y)) => ResOpt { inner: Ok(f(y)) },
+            Ok(None) => ResOpt { inner: Ok(None) },
+            Err(e) => ResOpt { inner: Err(e) },
+        }
+    }
+
+    fn map_inner<'env, F, U>(self, f: F) -> ResOpt<U>
+    where
+        F: FnOnce(T) -> U,
+    {
+        match self.inner {
+            Ok(Some(y)) => ResOpt { inner: Ok(Some(f(y))) },
+            Ok(None) => ResOpt { inner: Ok(None) },
+            Err(e) => ResOpt { inner: Err(e) },
+        }
+    }
+}
+
+impl<'env, T> Into<Result<Option<T>, String>> for ResOpt<T> {
+    fn into(self) -> Result<Option<T>, String> {
+        self.inner
+    }
+}
+
+impl<'env, T> From<Result<Option<T>, Local<'env, Throwable>>> for ResOpt<T> {
+    fn from(val: Result<Option<T>, Local<'env, Throwable>>) -> Self {
+        match val {
+            Ok(Some(y)) => ResOpt { inner: Ok(Some(y)) },
+            Ok(None) => ResOpt { inner: Ok(None) },
+            Err(e) => ResOpt {
+                inner: Err(format!("{:?}", e.toString().unwrap().unwrap())),
+            },
+        }
+    }
+}
+
+impl<'env, T> From<Result<Option<T>, String>> for ResOpt<T> {
+    fn from(val: Result<Option<T>, String>) -> Self {
+        match val {
+            Ok(Some(y)) => ResOpt { inner: Ok(Some(y)) },
+            Ok(None) => ResOpt { inner: Ok(None) },
+            Err(e) => ResOpt { inner: Err(e) },
+        }
+    }
+}
+
+macro_rules! resopt {
+    ( $x:expr ) => {
+        ResOpt::from($x)
+    };
+}
+
+#[macro_export]
+macro_rules! double_expect {
+    ( $x:expr ) => {
+        $x.expect(&format!("{}:{}", file!(), line!())).expect(&format!("{}:{}", file!(), line!()))
+    };
+}
 
 #[allow(non_snake_case)]
 fn Local_String<'env>(env: &'env JNIEnv, s: String) -> Local<'env, java::lang::String> {
@@ -59,8 +152,8 @@ fn Local_KeyGenerator<'env>(env: &'env JNIEnv, algorithm: &'env java::lang::Stri
 }
 
 #[allow(non_snake_case)]
-fn Local_KeyGenerator_generateKey<'env>(env: &'env JNIEnv, keygen: &'env KeyGenerator) -> Local<'env, Key> {
-    unsafe { std::mem::transmute::<Local<'_, SecretKey>, Local<'_, Key>>(double_expect!(keygen.generateKey())) }
+fn Local_KeyGenerator_generateKey<'env>(env: &'env JNIEnv, keygen: &'env KeyGenerator) -> ResOpt<Local<'env, Key>> {
+    resopt!(keygen.generateKey()).map_inner(|x| unsafe { std::mem::transmute::<Local<'_, SecretKey>, Local<'_, Key>>(x) })
 }
 
 #[allow(non_snake_case)]
@@ -75,32 +168,33 @@ fn Local_AlgorithmParameterSpec1<'env>(
     block_mode: &'env ObjectArray<java::lang::String, Throwable>,
     padding: &'env ObjectArray<java::lang::String, Throwable>,
     key_size: i32,
-) -> Local<'env, AlgorithmParameterSpec> {
-    let mut builder = expect!(KeyGenParameterSpec_Builder::new(
+) -> Result<Option<Local<'env, AlgorithmParameterSpec>>, String> {
+    resopt!(KeyGenParameterSpec_Builder::new(
         unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) },
         alias,
         KeyProperties::PURPOSE_ENCRYPT | KeyProperties::PURPOSE_DECRYPT,
-    ));
-    double_expect!(builder.setKeySize(key_size));
-    double_expect!(builder.setBlockModes(Some(&*block_mode)));
-    double_expect!(builder.setEncryptionPaddings(Some(&*padding)));
-    unsafe { std::mem::transmute::<Local<'_, KeyGenParameterSpec>, Local<'_, AlgorithmParameterSpec>>(double_expect!(builder.build())) }
+    )
+    .map(|x| Some(x)))
+    .and_then(|x| {
+        resopt!(x.setKeySize(key_size))
+            .map_result(|_| x.setBlockModes(Some(&*block_mode)))
+            .map_result(|_| x.setEncryptionPaddings(Some(&*padding)))
+            .map_result(|_| x.setUserAuthenticationRequired(true))
+            .map_result(|_| x.build())
+            .map_result(|x| Ok(Some(unsafe { std::mem::transmute::<Local<'_, KeyGenParameterSpec>, Local<'_, AlgorithmParameterSpec>>(x) })))
+    })
+    .into()
 }
 
 #[allow(non_snake_case)]
-fn Local_AlgorithmParameterSpec2<'env>(
-    env: &'env JNIEnv,
-    iv: &'env ByteArray,
-) -> Local<'env, AlgorithmParameterSpec> {
-    let spec = expect!(IvParameterSpec::new_byte_array(
-        unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) },
-        Some(iv)));
+fn Local_AlgorithmParameterSpec2<'env>(env: &'env JNIEnv, iv: &'env ByteArray) -> Local<'env, AlgorithmParameterSpec> {
+    let spec = expect!(IvParameterSpec::new_byte_array(unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) }, Some(iv)));
     unsafe { std::mem::transmute::<Local<'_, IvParameterSpec>, Local<'_, AlgorithmParameterSpec>>(spec) }
 }
 
 #[allow(non_snake_case)]
-fn Local_Base64_encodeToString<'env>(env: &'env JNIEnv, bytes: &'env ByteArray) -> Local<'env, java::lang::String> {
-    double_expect!(Base64::encodeToString_byte_array_int(
+fn Local_Base64_encodeToString<'env>(env: &'env JNIEnv, bytes: &'env ByteArray) -> ResOpt<Local<'env, java::lang::String>> {
+    resopt!(Base64::encodeToString_byte_array_int(
         unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) },
         Some(bytes),
         Base64::DEFAULT
@@ -109,18 +203,15 @@ fn Local_Base64_encodeToString<'env>(env: &'env JNIEnv, bytes: &'env ByteArray) 
 
 #[allow(non_snake_case)]
 fn Local_Base64_decode<'env>(env: &'env JNIEnv, s: &'env java::lang::String) -> Local<'env, ByteArray> {
-    double_expect!(Base64::decode_String_int(
-        unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) },
-        Some(s),
-        Base64::DEFAULT
-    ))
+    double_expect!(Base64::decode_String_int(unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) }, Some(s), Base64::DEFAULT))
 }
 
 #[allow(non_snake_case)]
-fn Local_Cipher<'env>(env: &'env JNIEnv, transform: &'env java::lang::String, mode: i32 , secret_key: &'env Key, spec: Option<&'env AlgorithmParameterSpec>) -> Local<'env, Cipher> {
-    let cipher = double_expect!(Cipher::getInstance_String(unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) }, transform));
-    cipher.init_int_Key_AlgorithmParameterSpec(mode, Some(secret_key), spec);
-    cipher
+fn Local_Cipher<'env>(env: &'env JNIEnv, transform: &'env java::lang::String, mode: i32, secret_key: &'env Key, spec: Option<&'env AlgorithmParameterSpec>) -> ResOpt<Local<'env, Cipher>> {
+    resopt!(Cipher::getInstance_String(unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) }, transform)).map_inner(|x| {
+        x.init_int_Key_AlgorithmParameterSpec(mode, Some(secret_key), spec);
+        x
+    })
 }
 
 #[allow(non_snake_case)]
@@ -150,13 +241,7 @@ fn Local_KeyStore_getKey<'env>(keystore: &'env KeyStore, alias: &'env java::lang
     double_expect!(keystore.getKey(Some(alias), None))
 }
 
-pub fn put(
-    env: &JNIEnv,
-    activity: JObject,
-    service: JString,
-    account: JString,
-    value: JString,
-) -> Result<(), String> {
+pub fn put(env: &JNIEnv, activity: JObject, service: JString, account: JString, value: JString) -> Result<Option<()>, String> {
     let service: String = env.get_string(service).expect("Couldn't get java string!").into();
     let account: String = env.get_string(account).expect("Couldn't get java string!").into();
     let value: String = env.get_string(value).expect("Couldn't get java string!").into();
@@ -186,27 +271,45 @@ pub fn put(
     expect!(paddings.set(0, Some(&*local_padding)));
 
     let keygen = Local_KeyGenerator(env, &local_algorithm, &local_provider);
-    let spec = Local_AlgorithmParameterSpec1(env, &local_alias, &block_modes, &paddings, key_size);
-    if Local_KeyGenerator_init(env, &keygen, &spec).is_ok() {
-        let secret_key = Local_KeyGenerator_generateKey(env, &keygen);
-        let cipher = Local_Cipher(env, &local_transform, Cipher::ENCRYPT_MODE, &secret_key, None);
-        let iv_bytes = double_expect!(cipher.getIV());
-        let local_iv = Local_Base64_encodeToString(env, &iv_bytes);
-        let value_bytes = double_expect!(local_value.getBytes());
-        let encrypted_bytes = Local_Cipher_doFinal(&cipher, &value_bytes);
-        let encrypted_value = Local_Base64_encodeToString(env, &encrypted_bytes);
-        let context = Local_Context(env, &activity);
-        let pref = Local_Context_getSharedPreferences(&context, &local_app);
-        let edit = double_expect!(pref.edit());
-        double_expect!(edit.putString(Some(&*local_key), Some(&*encrypted_value)));
-        double_expect!(edit.putString(Some(&*local_iv_key), Some(&*local_iv)));
-        match expect!(edit.commit()).into() {
-            true => Ok(()),
-            false => Err(format!("committing changes to SharedPreferences")),
-        }
-    } else {
-        Err(format!("initializing KeyGenerator"))
-    }
+    return match Local_AlgorithmParameterSpec1(env, &local_alias, &block_modes, &paddings, key_size) {
+        Err(e) => Err(e),
+        Ok(None) => Ok(None),
+        Ok(Some(spec)) => match Local_KeyGenerator_init(env, &keygen, &spec) {
+            Err(e) => Err(format!("{:?}", e.toString().unwrap().unwrap())),
+            Ok(_) => {
+                Local_KeyGenerator_generateKey(env, &keygen)
+                    .and_then(|secret_key| {
+                        Local_Cipher(env, &local_transform, Cipher::ENCRYPT_MODE, &secret_key, None).and_then(|cipher| {
+                            resopt!(cipher.getIV()).and_then(|iv_bytes| {
+                                Local_Base64_encodeToString(env, &iv_bytes).and_then(|local_iv| {
+                                    resopt!(local_value.getBytes()).and_then(|value_bytes| {
+                                        resopt!(cipher.doFinal_byte_array(Some(&*value_bytes))).and_then(|encrypted_bytes| {
+                                            Local_Base64_encodeToString(env, &encrypted_bytes).and_then(|encrypted_value| {
+                                                let context = Local_Context(env, &activity);
+                                                resopt!(context.getSharedPreferences(Some(&*local_app), Context::MODE_PRIVATE)).and_then(|pref| {
+                                                    resopt!(pref.edit()).and_then(|edit| {
+                                                        resopt!(edit.putString(Some(&*local_key), Some(&*encrypted_value)))
+                                                            .map_result(|_| edit.putString(Some(&*local_iv_key), Some(&*local_iv)))
+                                                            .and_then(|_| {
+                                                                resopt!(match edit.commit() {
+                                                                    Ok(true) => Ok(Some(())),
+                                                                    Ok(false) => Err(format!("Unknown Android error - failed writing changes to disk.")),
+                                                                    Err(e) => Err(format!("{:?}", e.toString().unwrap().unwrap())),
+                                                                })
+                                                            })
+                                                    })
+                                                })
+                                            })
+                                        })
+                                    })
+                                })
+                            })
+                        })
+                    })
+                    .inner
+            }
+        },
+    };
 }
 
 pub fn get(env: &JNIEnv, activity: JObject, service: JString, account: JString) -> Result<Option<String>, String> {
@@ -240,14 +343,20 @@ pub fn get(env: &JNIEnv, activity: JObject, service: JString, account: JString) 
     let iv_bytes = Local_Base64_decode(env, &iv_str);
     let spec = Local_AlgorithmParameterSpec2(env, &iv_bytes);
 
-    let cipher = Local_Cipher(env, &local_transform, Cipher::DECRYPT_MODE, &secret_key, Some(&spec));
-    let decrypted_bytes = Local_Cipher_doFinal(&cipher, &encrypted_bytes);
-    let decrypted_str = expect!(java::lang::String::new_byte_array(unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) }, Some(&*decrypted_bytes)));
-    Ok(Some(format!("{:?}", decrypted_str)))
-//    env.new_string(format!("{:?}", decrypted_str)).expect("Couldn't get java string!").into_inner()
+    return Local_Cipher(env, &local_transform, Cipher::DECRYPT_MODE, &secret_key, Some(&spec))
+        .map_result(|cipher| {
+            let decrypted_bytes = Local_Cipher_doFinal(&cipher, &encrypted_bytes);
+            let decrypted_str = expect!(java::lang::String::new_byte_array(
+                unsafe { jni_glue::Env::from_ptr(env.get_native_interface()) },
+                Some(&*decrypted_bytes)
+            ));
+            Ok(Some(format!("{:?}", decrypted_str)))
+        })
+        .inner;
+    //    env.new_string(format!("{:?}", decrypted_str)).expect("Couldn't get java string!").into_inner()
 }
 
-pub fn contains(env: &JNIEnv, activity: JObject, service: JString, account: JString) -> Result<bool, String> {
+pub fn contains(env: &JNIEnv, activity: JObject, service: JString, account: JString) -> Result<Option<bool>, String> {
     let service: String = env.get_string(service).expect("Couldn't get java string!").into();
     let account: String = env.get_string(account).expect("Couldn't get java string!").into();
 
@@ -258,20 +367,20 @@ pub fn contains(env: &JNIEnv, activity: JObject, service: JString, account: JStr
     let padding = KeyProperties::ENCRYPTION_PADDING_PKCS7;
     let transform = format!("{}/{}/{}", algorithm, block_mode, padding);
 
-    let local_app = Local_String(&env, service);
-    let local_iv_key = Local_String(&env, format!("{}iv", &account));
-    let local_key = Local_String(&env, account);
-    let local_alias = Local_String(&env, alias.to_string());
-    let local_algorithm = Local_String(&env, algorithm.to_string());
-    let local_provider = Local_String(&env, provider.to_string());
-    let local_transform = Local_String(&env, transform.to_string());
+    let local_app = Local_String(env, service);
+    let local_iv_key = Local_String(env, format!("{}iv", &account));
+    let local_key = Local_String(env, account);
+    let local_alias = Local_String(env, alias.to_string());
+    let local_algorithm = Local_String(env, algorithm.to_string());
+    let local_provider = Local_String(env, provider.to_string());
+    let local_transform = Local_String(env, transform.to_string());
 
-    let context = Local_Context(&env, &activity);
+    let context = Local_Context(env, &activity);
     let pref = Local_Context_getSharedPreferences(&context, &local_app);
-    pref.contains(Some(&*local_key)).map_err(|_| format!("checking account contained in SharedPreferences"))
+    pref.contains(Some(&*local_key)).map(|x| Some(x)).or(Err(format!("checking account contained in SharedPreferences")))
 }
 
-pub fn delete(env: &JNIEnv, activity: JObject, service: JString, account: JString) -> Result<(), String> {
+pub fn delete(env: &JNIEnv, activity: JObject, service: JString, account: JString) -> Result<Option<()>, String> {
     let service: String = env.get_string(service).expect("Couldn't get java string!").into();
     let account: String = env.get_string(account).expect("Couldn't get java string!").into();
 
@@ -282,23 +391,22 @@ pub fn delete(env: &JNIEnv, activity: JObject, service: JString, account: JStrin
     let padding = KeyProperties::ENCRYPTION_PADDING_PKCS7;
     let transform = format!("{}/{}/{}", algorithm, block_mode, padding);
 
-    let local_app = Local_String(&env, service);
-    let local_iv_key = Local_String(&env, format!("{}iv", &account));
-    let local_key = Local_String(&env, account);
-    let local_alias = Local_String(&env, alias.to_string());
-    let local_algorithm = Local_String(&env, algorithm.to_string());
-    let local_provider = Local_String(&env, provider.to_string());
-    let local_transform = Local_String(&env, transform.to_string());
+    let local_app = Local_String(env, service);
+    let local_iv_key = Local_String(env, format!("{}iv", &account));
+    let local_key = Local_String(env, account);
+    let local_alias = Local_String(env, alias.to_string());
+    let local_algorithm = Local_String(env, algorithm.to_string());
+    let local_provider = Local_String(env, provider.to_string());
+    let local_transform = Local_String(env, transform.to_string());
 
-    let context = Local_Context(&env, &activity);
+    let context = Local_Context(env, &activity);
     let pref = Local_Context_getSharedPreferences(&context, &local_app);
 
     let edit = double_expect!(pref.edit());
     double_expect!(edit.remove(Some(&*local_key)));
     double_expect!(edit.remove(Some(&*local_iv_key)));
     match expect!(edit.commit()).into() {
-        true => Ok(()),
-        false => Err(format!("committing changes to SharedPreferences")),
+        true => Ok(Some(())),
+        false => Err(format!("Unknown Android error - failed writing changes to disk.")),
     }
 }
-

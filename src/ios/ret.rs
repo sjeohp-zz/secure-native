@@ -1,5 +1,6 @@
 use crate::Return;
 use std::cell::Cell;
+use libc::c_char;
 
 impl Return<'static> for () {
     type Ext = u8;
@@ -18,11 +19,10 @@ impl Return<'static> for bool {
 }
 
 impl Return<'static> for String {
-    type Ext = *mut String;
+    type Ext = *mut c_char;
     type Env = Cell<u32>;
     fn convert(_: &Self::Env, val: Self) -> Self::Ext {
-        let string = val.to_owned();
-        Box::into_raw(Box::new(string))
+        ffi_support::rust_string_to_c(val)
     }
 }
 

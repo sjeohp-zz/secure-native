@@ -1,7 +1,8 @@
 use crate::Argument;
 use crate::{double_expect, expect};
 use std::cell::Cell;
-use std::ffi::CString;
+use ffi_support::FfiStr;
+use libc::c_char;
 
 impl Argument<'static> for u32 {
     type Ext = u32;
@@ -28,9 +29,9 @@ impl Argument<'static> for bool {
 }
 
 impl Argument<'static> for String {
-    type Ext = CString;
+    type Ext = *const c_char;
     type Env = Cell<u32>;
     fn convert(_: &Self::Env, val: Self::Ext) -> Self {
-        expect!(val.into_string())
+        unsafe { FfiStr::from_raw(val) }.into_string()
     }
 }

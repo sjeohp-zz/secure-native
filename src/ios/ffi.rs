@@ -12,15 +12,17 @@ use std::{
     ptr, slice, str,
 };
 
+pub(crate) static kSecAccessControlUserPresence: CFOptionFlags = 1u32 << 0;
+pub(crate) static kSecAccessControlBiometryAny: CFOptionFlags = 1u32 << 1;
+pub(crate) static kSecAccessControlBiometryCurrentSet: CFOptionFlags = 1u32 << 3;
+pub(crate) static kSecAccessControlDevicePasscode: CFOptionFlags = 1u32 << 4;
 
-/// Reference to an access control policy.
-///
-/// See `SecAccessControlRef` documentation:
-/// <https://developer.apple.com/documentation/security/secaccesscontrolref>
-pub(crate) type AccessControlRef = CFTypeRef;
+pub(crate) type SecAccessControlRef = CFTypeRef;
 
 #[link(name = "Security", kind = "framework")]
 extern "C" {
+    pub(crate) static kSecUseAuthenticationUI: CFStringRef;
+    pub(crate) static kSecUseAuthenticationUIFail: CFStringRef;
     pub(crate) static kSecAttrAccessControl: CFStringRef;
     pub(crate) static kSecAttrAccessible: CFStringRef;
     pub(crate) static kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly: CFStringRef;
@@ -181,7 +183,6 @@ extern "C" {
     pub(crate) static kSecUseKeychain: CFStringRef;
     pub(crate) static kSecUseOperationPrompt: CFStringRef;
     pub(crate) static kSecValueData: CFStringRef;
-    pub(crate) static kSecUseNoAuthenticationUI: CFStringRef;
 
     pub(crate) fn SecAccessControlCreateWithFlags(
         allocator: CFAllocatorRef,
