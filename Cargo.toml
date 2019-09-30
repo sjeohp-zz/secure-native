@@ -11,15 +11,13 @@ failure = "0.1"
 libc = "0.2"
 ffi-support = "0.3"
 
-#[build-dependencies]
-#jni-android-sys-gen = { path = "../jni-bindgen/jni-android-sys-gen" }
-
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.10.2"
-jni-glue = { path = "../jni-bindgen/jni-glue", features = [] }
+jni-glue = { git = "https://github.com/sjeohp/jni-bindgen", package = "jni-glue", features = [] }
 
 [target.'cfg(target_os = "android")'.dependencies.jni-android-sys]
-path = "../jni-bindgen/jni-android-sys" 
+git = "https://github.com/sjeohp/jni-bindgen" 
+package = "jni-android-sys"
 features = [
 "api-level-29", 
 "android-util-Base64",
