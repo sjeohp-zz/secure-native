@@ -17,10 +17,13 @@ pub use ffi_support::{define_string_destructor, FfiStr};
 macro_rules! define_string_destructor { ( $x:ident ) => {} }
 
 /// Trait for converting Rust types into FFI return values
-pub trait Return<'a> {
+pub trait Return<'a>: Sized {
     type Ext;
     type Env;
     fn convert(env: &Self::Env, val: Self) -> Self::Ext;
+    fn convert_without_exception(env: &Self::Env, val: Self) -> Self::Ext {
+        Return::convert(env, val)
+    }
 }
 
 /// Trait for converting FFI arguments into Rust types
@@ -31,17 +34,10 @@ pub trait Argument<'a> {
 }
 
 #[macro_export]
-macro_rules! expect {
-    ( $x:expr ) => {
-        $x.expect(&format!("{}:{}", file!(), line!()))
-    };
-}
-
-#[macro_export]
 macro_rules! export_put {
-    ($( @$jname:ident fn $name:ident($s:ident : Result<Option<()>, String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
+    ($( @$jname:ident fn $name:ident($s:ident : Result<(), String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
         $(
-            pub fn $name($s: Result<Option<()>, String>, $( $a: $t ),*) -> $ret $code
+            pub fn $name($s: Result<(), String>, $( $a: $t ),*) -> $ret $code
         )*
 
         #[cfg(target_os = "android")]
@@ -88,9 +84,9 @@ macro_rules! export_put {
 
 #[macro_export]
 macro_rules! export_get {
-    ($( @$jname:ident fn $name:ident($s:ident : Result<Option<String>, String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
+    ($( @$jname:ident fn $name:ident($s:ident : Result<String, String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
         $(
-            pub fn $name($s: Result<Option<String>, String>, $( $a: $t ),*) -> $ret $code
+            pub fn $name($s: Result<String, String>, $( $a: $t ),*) -> $ret $code
         )*
 
         #[cfg(target_os = "android")]
@@ -137,9 +133,9 @@ macro_rules! export_get {
 
 #[macro_export]
 macro_rules! export_contains {
-    ($( @$jname:ident fn $name:ident($s:ident : Result<Option<bool>, String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
+    ($( @$jname:ident fn $name:ident($s:ident : Result<bool, String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
         $(
-            pub fn $name($s: Result<Option<bool>, String>, $( $a: $t ),*) -> $ret $code
+            pub fn $name($s: Result<bool, String>, $( $a: $t ),*) -> $ret $code
         )*
 
         #[cfg(target_os = "android")]
@@ -186,9 +182,9 @@ macro_rules! export_contains {
 
 #[macro_export]
 macro_rules! export_delete {
-    ($( @$jname:ident fn $name:ident($s:ident : Result<Option<()>, String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
+    ($( @$jname:ident fn $name:ident($s:ident : Result<(), String>$(, $a:ident : $t:ty )*) -> $ret:ty $code:block )*) => {
         $(
-            pub fn $name($s: Result<Option<()>, String>, $( $a: $t ),*) -> $ret $code
+            pub fn $name($s: Result<(), String>, $( $a: $t ),*) -> $ret $code
         )*
 
         #[cfg(target_os = "android")]
@@ -239,28 +235,28 @@ mod tests {
 
     export_put! {
         @Java_io_parity_secure_native_test_put
-        fn test_put(success: Result<Option<()>, String>, other: u32) -> Result<Option<()>, String> {
+        fn test_put(success: Result<(), String>, other: u32) -> Result<(), String> {
             success
         }
     }
 
     export_get! {
         @Java_io_parity_secure_native_test_get
-        fn test_get(seed: Result<Option<String>, String>, other: u32) -> Result<Option<String>, String> {
+        fn test_get(seed: Result<String, String>, other: u32) -> Result<String, String> {
             seed
         }
     }
 
     export_contains! {
         @Java_io_parity_secure_native_test_contains
-        fn test_contains(contained: Result<Option<bool>, String>, other: u32) -> Result<Option<bool>, String> {
+        fn test_contains(contained: Result<bool, String>, other: u32) -> Result<bool, String> {
             contained
         }
     }
 
     export_delete! {
         @Java_io_parity_secure_native_test_delete
-        fn test_delete(success: Result<Option<()>, String>, other: u32) -> Result<Option<()>, String> {
+        fn test_delete(success: Result<(), String>, other: u32) -> Result<(), String> {
             success
         }
     }

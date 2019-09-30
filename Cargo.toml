@@ -22,8 +22,16 @@ jni-glue = { path = "../jni-bindgen/jni-glue", features = [] }
 path = "../jni-bindgen/jni-android-sys" 
 features = [
 "api-level-29", 
+"android-util-Base64",
+"android-app-Activity",
+"android-content-Context",
+"android-content-Intent",
+"android-content-SharedPreferences",
+"android-content-SharedPreferences_Editor",
+"android-security-keystore-KeyProperties",
+"android-security-keystore-KeyGenParameterSpec",
+"android-security-keystore-KeyGenParameterSpec_Builder",
 "java-lang-String",
-"java-util-Enumeration",
 "java-security-AlgorithmParameters",
 "java-security-spec-AlgorithmParameterSpec",
 "java-security-KeyStore_LoadStoreParameter",
@@ -31,17 +39,10 @@ features = [
 "java-security-Key",
 "java-security-KeyStore_SecretKeyEntry",
 "java-security-SecureRandom",
+"java-util-Enumeration",
 "javax-crypto-KeyGenerator",
 "javax-crypto-SecretKey",
 "javax-crypto-Cipher",
 "javax-crypto-spec-IvParameterSpec",
-"javax-crypto-spec-GCMParameterSpec",
-"android-util-Base64",
-"android-app-Activity",
-"android-content-Context",
-"android-content-SharedPreferences",
-"android-content-SharedPreferences_Editor",
-"android-security-keystore-KeyProperties",
-"android-security-keystore-KeyGenParameterSpec",
-"android-security-keystore-KeyGenParameterSpec_Builder"
+"javax-crypto-spec-GCMParameterSpec"
 ]
