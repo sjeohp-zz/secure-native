@@ -1,5 +1,4 @@
 use crate::Argument;
-use crate::{double_expect, expect};
 use std::cell::Cell;
 use ffi_support::FfiStr;
 use libc::c_char;

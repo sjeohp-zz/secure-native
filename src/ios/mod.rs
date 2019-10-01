@@ -34,7 +34,6 @@ pub fn put(service: &str, account: &str, value: &str) -> Result<(), String> {
         )
     };
     if !error.is_null() {
-        println!("{}", Error::from(error));
         Err(format!("{}", Error::from(error)))
     } else {
         let attrs = unsafe {
@@ -55,7 +54,6 @@ pub fn put(service: &str, account: &str, value: &str) -> Result<(), String> {
         let mut result: CFTypeRef = ptr::null_mut();
         let status = unsafe { SecItemAdd(attrs.as_concrete_TypeRef(), &mut result) };
         if let Some(e) = Error::maybe_from_OSStatus(status) {
-            println!("{}", e);
             Err(format!("{}", e))
         } else {
             Ok(())
@@ -63,7 +61,7 @@ pub fn put(service: &str, account: &str, value: &str) -> Result<(), String> {
     }
 }
 
-pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
+pub fn get(service: &str, account: &str) -> Result<String, String> {
     let query = unsafe {
         CFDictionary::from_CFType_pairs(&[
             (
@@ -85,14 +83,14 @@ pub fn get(service: &str, account: &str) -> Result<Option<String>, String> {
     if let Some(e) = Error::maybe_from_OSStatus(status) {
         Err(format!("{}", e))
     } else {
-        Ok(unsafe {
+        unsafe {
             (&*CFDictionary::from_void(result) as &CFDictionary).find(kSecValueData.to_void()).map(|item| {
                 let data: &CFData = &*CFData::from_void(*item);
                 let length = CFDataGetLength(data.as_concrete_TypeRef());
                 let bytes = CFDataGetBytePtr(data.as_concrete_TypeRef());
                 CFString::wrap_under_get_rule(CFStringCreateWithBytes(kCFAllocatorDefault, bytes, length, kCFStringEncodingUTF8, 0)).to_string()
             })
-        })
+        }.ok_or(format!("Couldn't find value for key: {}", account))
     }
 }
 
@@ -134,5 +132,9 @@ pub fn delete(service: &str, account: &str) -> Result<(), String> {
         ])
     };
     let status = unsafe { SecItemDelete(query.as_concrete_TypeRef()) };
-    Ok(())
+    if let Some(e) = Error::maybe_from_OSStatus(status) {
+        Err(format!("{}", e))
+    } else {
+        Ok(())
+    }
 }

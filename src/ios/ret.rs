@@ -40,3 +40,18 @@ impl<Inner: Return<'static, Env = Cell<u32>> + Default> Return<'static> for Opti
         Return::convert(env, val)
     }
 }
+
+impl<Inner: Return<'static, Env = Cell<u32>> + Default> Return<'static> for Result<Inner, String> {
+    type Ext = Inner::Ext;
+    type Env = Inner::Env;
+    fn convert(env: &Self::Env, val: Self) -> Self::Ext {
+        let val = match val {
+            Ok(inner) => inner,
+            Err(_) => {
+                env.set(1);
+                Inner::default()
+            }
+        };
+        Return::convert(env, val)
+    }
+}
