@@ -16,6 +16,7 @@ pub(crate) static kSecAccessControlUserPresence: CFOptionFlags = 1u32 << 0;
 pub(crate) static kSecAccessControlBiometryAny: CFOptionFlags = 1u32 << 1;
 pub(crate) static kSecAccessControlBiometryCurrentSet: CFOptionFlags = 1u32 << 3;
 pub(crate) static kSecAccessControlDevicePasscode: CFOptionFlags = 1u32 << 4;
+pub(crate) static kSecAccessControlApplicationPassword: CFOptionFlags = 1u32 << 31;
 
 pub(crate) type SecAccessControlRef = CFTypeRef;
 
@@ -196,6 +197,7 @@ extern "C" {
         reserved: *const c_void,
     ) -> CFStringRef;
     pub(crate) fn SecItemAdd(attributes: CFDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
+    pub(crate) fn SecItemUpdate(query: CFDictionaryRef, attributes: CFDictionaryRef) -> OSStatus;
     pub(crate) fn SecItemCopyMatching(query: CFDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
     pub(crate) fn SecItemDelete(query: CFDictionaryRef) -> OSStatus;
 }

@@ -57,6 +57,7 @@ pub fn put<'a>(env: &'a JNIEnv, activity: JObject, service: JString, account: JS
     let spec = java_algorithm_parameter_spec(env, &alias, &block_modes, &paddings, key_size)?;
     let _ = stringify_throwable!(keygen.init_AlgorithmParameterSpec(Some(&*spec)))?;
     let secret_key = java_generate_key(&keygen)?;
+
     let cipher = java_cipher(env, &transform, Cipher::ENCRYPT_MODE, secret_key, None)?;
     let iv_bytes = r#try!(resopt!(cipher.getIV()));
     let iv = java_base64_encode(env, &iv_bytes)?;
@@ -68,6 +69,7 @@ pub fn put<'a>(env: &'a JNIEnv, activity: JObject, service: JString, account: JS
     let edit = r#try!(resopt!(pref.edit()));
     let _ = r#try!(resopt!(edit.putString(Some(&*key), Some(&*encrypted_value))));
     let _ = r#try!(resopt!(edit.putString(Some(&*iv_key), Some(&*iv))));
+
     return match edit.commit() {
         Ok(true) => Ok(()),
         Ok(false) => Err(format!("Unknown Android error - failed committing changes to disk.")),

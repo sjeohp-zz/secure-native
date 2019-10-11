@@ -1,6 +1,5 @@
-#![feature(trace_macros)]
-#![feature(option_flattening)]
-#![allow(non_snake_case, non_upper_case_globals)]
+#![feature(trace_macros, option_flattening)]
+#![allow(non_snake_case, non_upper_case_globals, dead_code)]
 
 #[cfg(target_os = "android")]
 pub mod android;
@@ -8,13 +7,20 @@ pub mod android;
 pub mod ios;
 
 #[cfg(target_os = "ios")]
-pub extern crate ffi_support;
-#[cfg(target_os = "ios")]
-pub use ffi_support::{define_string_destructor, FfiStr};
+pub use ffi_support;
 
-#[cfg(target_os = "android")]
 #[macro_export]
-macro_rules! define_string_destructor { ( $x:ident ) => {} }
+macro_rules! define_cresult_destructor {
+    ( $x:ident, $y:ty ) => {
+        #[cfg(target_os = "ios")]
+        #[no_mangle]
+        pub extern "C" fn $x(x: *mut $crate::ios::CResult<<$y as $crate::Return<'static>>::Ext>) {
+            unsafe {
+                Box::from_raw(x);
+            }
+        }
+    };
+}
 
 /// Trait for converting Rust types into FFI return values
 pub trait Return<'a>: Sized {
@@ -23,6 +29,10 @@ pub trait Return<'a>: Sized {
     fn convert(env: &Self::Env, val: Self) -> Self::Ext;
     fn convert_without_exception(env: &Self::Env, val: Self) -> Self::Ext {
         Return::convert(env, val)
+    }
+    #[cfg(target_os = "ios")]
+    fn convert_cresult(env: &Self::Env, val: Self) -> *mut ios::CResult<Self::Ext> {
+        panic!()
     }
 }
 
@@ -50,8 +60,8 @@ macro_rules! export_put {
 
             $(
                 #[no_mangle]
-                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, service: JString, account: JString, value: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
-                    let success = $crate::android::put(&env, activity, service, account, value);
+                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, app: JString, key: JString, value: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
+                    let success = $crate::android::put(&env, activity, app, key, value);
                     let ret = super::$name(success, $( Argument::convert(&env, $a) ),*);
                     Return::convert(&env, ret)
                 }
@@ -69,11 +79,11 @@ macro_rules! export_put {
 
             $(
                 #[no_mangle]
-                pub extern fn $name(err: *mut c_uint, service: FfiStr, account: FfiStr, value: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> <$ret as Return<'static>>::Ext {
+                pub extern fn $name(err: *mut c_uint, app: FfiStr, key: FfiStr, value: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> *mut CResult<<$ret as Return<'static>>::Ext> {
                     let error = Cell::new(0);
-                    let success = $crate::ios::put(service.as_str(), account.as_str(), value.as_str());
+                    let success = $crate::ios::put(app.as_str(), key.as_str(), value.as_str());
                     let ret = super::$name(success, $(Argument::convert(&error, $a)),*);
-                    let ret = Return::convert(&error, ret);
+                    let ret = Return::convert_cresult(&error, ret);
                     unsafe { *err |= error.get() as c_uint };
                     ret
                 }
@@ -99,8 +109,8 @@ macro_rules! export_get {
 
             $(
                 #[no_mangle]
-                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, service: JString, account: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
-                    let res = $crate::android::get(&env, activity, service, account);
+                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, app: JString, key: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
+                    let res = $crate::android::get(&env, activity, app, key);
                     let ret = super::$name(res, $( Argument::convert(&env, $a) ),*);
                     Return::convert(&env, ret)
                 }
@@ -118,11 +128,11 @@ macro_rules! export_get {
 
             $(
                 #[no_mangle]
-                pub extern fn $name(err: *mut c_uint, service: FfiStr, account: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> <$ret as Return<'static>>::Ext {
+                pub extern fn $name(err: *mut c_uint, app: FfiStr, key: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> *mut CResult<<$ret as Return<'static>>::Ext> {
                     let error = Cell::new(0);
-                    let res = $crate::ios::get(service.as_str(), account.as_str());
+                    let res = $crate::ios::get(app.as_str(), key.as_str());
                     let ret = super::$name(res, $(Argument::convert(&error, $a)),*);
-                    let ret = Return::convert(&error, ret);
+                    let ret = Return::convert_cresult(&error, ret);
                     unsafe { *err |= error.get() as c_uint };
                     ret
                 }
@@ -148,8 +158,8 @@ macro_rules! export_contains {
 
             $(
                 #[no_mangle]
-                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, service: JString, account: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
-                    let res = $crate::android::contains(&env, activity, service, account);
+                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, app: JString, key: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
+                    let res = $crate::android::contains(&env, activity, app, key);
                     let ret = super::$name(res, $( Argument::convert(&env, $a) ),*);
                     Return::convert(&env, ret)
                 }
@@ -167,11 +177,11 @@ macro_rules! export_contains {
 
             $(
                 #[no_mangle]
-                pub extern fn $name(err: *mut c_uint, service: FfiStr, account: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> <$ret as Return<'static>>::Ext {
+                pub extern fn $name(err: *mut c_uint, app: FfiStr, key: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> *mut CResult<<$ret as Return<'static>>::Ext> {
                     let error = Cell::new(0);
-                    let res = $crate::ios::contains(service.as_str(), account.as_str());
+                    let res = $crate::ios::contains(app.as_str(), key.as_str());
                     let ret = super::$name(res, $(Argument::convert(&error, $a)),*);
-                    let ret = Return::convert(&error, ret);
+                    let ret = Return::convert_cresult(&error, ret);
                     unsafe { *err |= error.get() as c_uint };
                     ret
                 }
@@ -197,8 +207,8 @@ macro_rules! export_delete {
 
             $(
                 #[no_mangle]
-                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, service: JString, account: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
-                    let res = $crate::android::delete(&env, activity, service, account);
+                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, app: JString, key: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
+                    let res = $crate::android::delete(&env, activity, app, key);
                     let ret = super::$name(res, $( Argument::convert(&env, $a) ),*);
                     Return::convert(&env, ret)
                 }
@@ -216,11 +226,11 @@ macro_rules! export_delete {
 
             $(
                 #[no_mangle]
-                pub extern fn $name(err: *mut c_uint, service: FfiStr, account: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> <$ret as Return<'static>>::Ext {
+                pub extern fn $name(err: *mut c_uint, app: FfiStr, key: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> *mut CResult<<$ret as Return<'static>>::Ext> {
                     let error = Cell::new(0);
-                    let res = $crate::ios::delete(service.as_str(), account.as_str());
+                    let res = $crate::ios::delete(app.as_str(), key.as_str());
                     let ret = super::$name(res, $(Argument::convert(&error, $a)),*);
-                    let ret = Return::convert(&error, ret);
+                    let ret = Return::convert_cresult(&error, ret);
                     unsafe { *err |= error.get() as c_uint };
                     ret
                 }
@@ -231,7 +241,7 @@ macro_rules! export_delete {
 
 #[cfg(test)]
 mod tests {
-//    trace_macros!(true);
+    //    trace_macros!(true);
 
     export_put! {
         @Java_io_parity_secure_native_test_put
@@ -262,6 +272,5 @@ mod tests {
     }
 
     #[test]
-    fn test_exports() {
-    }
+    fn test_exports() {}
 }

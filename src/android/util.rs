@@ -59,9 +59,8 @@ pub fn java_algorithm_parameter_spec<'a>(
     r#try!(resopt!(x.setBlockModes(Some(&*block_mode))));
     r#try!(resopt!(x.setEncryptionPaddings(Some(&*padding))));
     r#try!(resopt!(x.setRandomizedEncryptionRequired(true))); // indistinguishability under chosen-plaintext attack (IND-CPA)
-    r#try!(resopt!(x.setUserAuthenticationRequired(true)));
-    r#try!(resopt!(x.setUserAuthenticationValidityDurationSeconds(2)));
-    r#try!(resopt!(x.setInvalidatedByBiometricEnrollment(false)));
+    r#try!(resopt!(x.setUserAuthenticationRequired(true))); // requires biometric auth before every key use; at least one fingerprint must be enrolled
+//    r#try!(resopt!(x.setInvalidatedByBiometricEnrollment(false))); // defaults to true
     let built = r#try!(resopt!(x.build()));
     Ok(unsafe { std::mem::transmute::<Local<'_, KeyGenParameterSpec>, Local<'_, AlgorithmParameterSpec>>(built) })
 }

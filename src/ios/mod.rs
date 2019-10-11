@@ -29,35 +29,65 @@ pub fn put(service: &str, account: &str, value: &str) -> Result<(), String> {
         SecAccessControlCreateWithFlags(
             kCFAllocatorDefault,
             CFString::wrap_under_get_rule(kSecAttrAccessibleWhenUnlockedThisDeviceOnly.into()).as_CFTypeRef(),
-            kSecAccessControlUserPresence,
+            kSecAccessControlBiometryCurrentSet,
+//            kSecAccessControlApplicationPassword,
             &mut error,
         )
     };
     if !error.is_null() {
         Err(format!("{}", Error::from(error)))
     } else {
-        let attrs = unsafe {
-            CFDictionary::from_CFType_pairs(&[
-                (
-                    CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
-                    CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
-                ),
-                (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
-                (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
-                (CFString::wrap_under_get_rule(kSecValueData.into()).as_CFType(), CFData::from_buffer(value.as_bytes()).as_CFType()),
-                (
-                    CFString::wrap_under_get_rule(kSecAttrAccessControl.into()).as_CFType(),
-                    SecAccessControl::wrap_under_get_rule(access.into()).as_CFType(),
-                ),
-            ])
-        };
         let mut result: CFTypeRef = ptr::null_mut();
-        let status = unsafe { SecItemAdd(attrs.as_concrete_TypeRef(), &mut result) };
-        if let Some(e) = Error::maybe_from_OSStatus(status) {
-            Err(format!("{}", e))
-        } else {
-            Ok(())
-        }
+        contains(service, account).and_then(|contained| {
+            let status = if contained {
+                let query = unsafe {
+                    CFDictionary::from_CFType_pairs(&[
+                        (
+                            CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
+                            CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
+                        ),
+                        (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
+                        (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
+//                        (
+//                            CFString::wrap_under_get_rule(kSecMatchLimit.into()).as_CFType(),
+//                            CFString::wrap_under_get_rule(kSecMatchLimitOne.into()).as_CFType(),
+//                        ),
+                    ])
+                };
+                let attrs = unsafe {
+                    CFDictionary::from_CFType_pairs(&[
+                        (CFString::wrap_under_get_rule(kSecValueData.into()).as_CFType(), CFData::from_buffer(value.as_bytes()).as_CFType()),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrAccessControl.into()).as_CFType(),
+                            SecAccessControl::wrap_under_get_rule(access.into()).as_CFType(),
+                        ),
+                    ])
+                };
+                unsafe { SecItemUpdate(query.as_concrete_TypeRef(), attrs.as_concrete_TypeRef()) }
+            } else {
+                let attrs = unsafe {
+                    CFDictionary::from_CFType_pairs(&[
+                        (
+                            CFString::wrap_under_get_rule(kSecClass.into()).as_CFType(),
+                            CFString::wrap_under_get_rule(kSecClassGenericPassword.into()).as_CFType(),
+                        ),
+                        (CFString::wrap_under_get_rule(kSecAttrService.into()).as_CFType(), CFString::from(service).as_CFType()),
+                        (CFString::wrap_under_get_rule(kSecAttrAccount.into()).as_CFType(), CFString::from(account).as_CFType()),
+                        (CFString::wrap_under_get_rule(kSecValueData.into()).as_CFType(), CFData::from_buffer(value.as_bytes()).as_CFType()),
+                        (
+                            CFString::wrap_under_get_rule(kSecAttrAccessControl.into()).as_CFType(),
+                            SecAccessControl::wrap_under_get_rule(access.into()).as_CFType(),
+                        ),
+                    ])
+                };
+                unsafe { SecItemAdd(attrs.as_concrete_TypeRef(), &mut result) }
+            };
+            if let Some(e) = Error::maybe_from_OSStatus(status) {
+                Err(format!("{}", e))
+            } else {
+                Ok(())
+            }
+        })
     }
 }
 
@@ -90,7 +120,8 @@ pub fn get(service: &str, account: &str) -> Result<String, String> {
                 let bytes = CFDataGetBytePtr(data.as_concrete_TypeRef());
                 CFString::wrap_under_get_rule(CFStringCreateWithBytes(kCFAllocatorDefault, bytes, length, kCFStringEncodingUTF8, 0)).to_string()
             })
-        }.ok_or(format!("Couldn't find value for key: {}", account))
+        }
+        .ok_or(format!("Couldn't find value for key: {}", account))
     }
 }
 
