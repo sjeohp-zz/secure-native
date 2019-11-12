@@ -57,11 +57,12 @@ macro_rules! export_put {
 
             use jni::JNIEnv;
             use jni::objects::{JClass, JObject, JString};
+            use jni::sys::jboolean;
 
             $(
                 #[no_mangle]
-                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, app: JString, key: JString, value: JString, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
-                    let success = $crate::android::put(&env, activity, app, key, value);
+                pub extern fn $jname<'jni>(env: JNIEnv<'jni>, _: JClass, activity: JObject, app: JString, key: JString, value: JString, with_biometry: jboolean, $( $a: <$t as Argument<'jni>>::Ext ),*) -> <$ret as Return<'jni>>::Ext {
+                    let success = $crate::android::put(&env, activity, app, key, value, with_biometry);
                     let ret = super::$name(success, $( Argument::convert(&env, $a) ),*);
                     Return::convert(&env, ret)
                 }
@@ -74,14 +75,14 @@ macro_rules! export_put {
             use $crate::{Return, Argument};
 
             use std::cell::Cell;
-            use libc::c_uint;
+            use libc::{c_uint, c_uchar};
             use $crate::ffi_support::FfiStr;
 
             $(
                 #[no_mangle]
-                pub extern fn $name(err: *mut c_uint, app: FfiStr, key: FfiStr, value: FfiStr, $( $a: <$t as Argument<'static>>::Ext ),*) -> *mut CResult<<$ret as Return<'static>>::Ext> {
+                pub extern fn $name(err: *mut c_uint, app: FfiStr, key: FfiStr, value: FfiStr, with_biometry: c_uchar, $( $a: <$t as Argument<'static>>::Ext ),*) -> *mut CResult<<$ret as Return<'static>>::Ext> {
                     let error = Cell::new(0);
-                    let success = $crate::ios::put(app.as_str(), key.as_str(), value.as_str());
+                    let success = $crate::ios::put(app.as_str(), key.as_str(), value.as_str(), with_biometry != 0);
                     let ret = super::$name(success, $(Argument::convert(&error, $a)),*);
                     let ret = Return::convert_cresult(&error, ret);
                     unsafe { *err |= error.get() as c_uint };

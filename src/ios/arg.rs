@@ -1,7 +1,7 @@
 use crate::Argument;
-use std::cell::Cell;
 use ffi_support::FfiStr;
 use libc::c_char;
+use std::cell::Cell;
 
 impl Argument<'static> for u32 {
     type Ext = u32;

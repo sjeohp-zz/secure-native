@@ -15,7 +15,11 @@ impl<'env, T> Into<Result<T>> for ResultOption<T, Local<'env, Throwable>> {
     fn into(self) -> Result<T> {
         match self.0 {
             Ok(Some(y)) => Ok(y),
-            Ok(None) => Err(format!("Java function returned NULL - {}:{}", file!(), line!())),
+            Ok(None) => Err(format!(
+                "Java function returned NULL - {}:{}",
+                file!(),
+                line!()
+            )),
             Err(e) => Err(format!("{:?}", e.getMessage().unwrap().unwrap())),
             //            Ok(None) => Err(format!("Java function returned unexpected null - {}:{}", file!(), line!())),
             //            Err(e) => {

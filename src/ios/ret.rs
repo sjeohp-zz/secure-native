@@ -63,12 +63,10 @@ impl<Inner: Return<'static, Env = Cell<u32>> + Default> Return<'static> for Resu
 
     fn convert_cresult(env: &Self::Env, val: Self) -> *mut CResult<Self::Ext> {
         match val {
-            Ok(inner) => {
-                Box::into_raw(Box::new(CResult {
-                    error_msg: Return::convert(env, String::default()),
-                    value: Return::convert(env, inner),
-                }))
-            }
+            Ok(inner) => Box::into_raw(Box::new(CResult {
+                error_msg: Return::convert(env, String::default()),
+                value: Return::convert(env, inner),
+            })),
             Err(e) => {
                 env.set(1);
                 Box::into_raw(Box::new(CResult {
